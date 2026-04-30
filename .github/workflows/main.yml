@@ -1,4 +1,4 @@
-name: Jira Enforcement + Auto Format
+name: Jira Ticket Validation + Extraction
 
 on:
   pull_request:
@@ -6,19 +6,14 @@ on:
   push:
     branches:
       - main
-permissions:
-  contents: write
-  pull-requests: write
-
-env:
-  AUTO_FORMAT: "true"   # set to "false" if you only want validation
 
 jobs:
   jira-validation:
+    name: Validate + Extract Jira Tickets
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate + Normalize Jira Tickets
+      - name: Validate and Extract Jira Tickets
         uses: actions/github-script@v7
         with:
           script: |
@@ -26,76 +21,44 @@ jobs:
             const invalidMerged = /[A-Z]{2,10}-\d+-\d+/i;
 
             function extractTickets(text) {
-              const matches = text.match(jiraRegex) || [];
-              // deduplicate while preserving order
-              return [...new Set(matches.map(t => t.toUpperCase()))];
+              return [...new Set((text.match(jiraRegex) || []).map(t => t.toUpperCase()))];
             }
 
-            function validateText(text) {
-              if (invalidMerged.test(text)) {
-                throw new Error("Invalid Jira format: merged tickets like BFRN-1234-1235 are not allowed");
+            function validate(text) {
+              const clean = (text || "").trim();
+
+              core.info(`Checking: ${clean}`);
+
+              // Reject invalid merged tickets like BFRN-1234-1235
+              if (invalidMerged.test(clean)) {
+                throw new Error("Invalid Jira format: BFRN-1234-1235 is not allowed");
               }
 
-              const tickets = extractTickets(text);
+              const tickets = extractTickets(clean);
 
+              // Must contain at least one Jira ticket
               if (tickets.length === 0) {
-                throw new Error("At least one Jira ticket required (e.g. BFRN-1234)");
+                throw new Error("Missing Jira ticket (e.g. BFRN-1234)");
               }
+
+              // Echo extracted tickets
+              core.info(`Extracted Jira tickets: ${tickets.join(", ")}`);
 
               return tickets;
             }
 
-            async function autoFormatPR(title, tickets) {
-              if (!process.env.AUTO_FORMAT || process.env.AUTO_FORMAT !== "true") return;
+            if (context.eventName === "pull_request") {
+              const tickets = validate(context.payload.pull_request.title);
+              core.info(`PR valid | Tickets: ${tickets.join(", ")}`);
+            } else {
+              const commits = await github.rest.repos.listCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.payload.after
+              });
 
-              // remove all Jira tickets from title
-              let cleaned = title.replace(jiraRegex, "")
-                                 .replace(/[:\-–—]+/g, " ")
-                                 .replace(/\s+/g, " ")
-                                 .trim();
-
-              const primary = tickets[0];
-              const newTitle = `${primary}: ${cleaned || "Update"}`;
-
-              if (title !== newTitle) {
-                core.info(`Auto-updating PR title → ${newTitle}`);
-
-                await github.rest.pulls.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: context.issue.number,
-                  title: newTitle
-                });
+              for (const c of commits.data) {
+                const tickets = validate(c.commit.message);
+                core.info(`Commit valid | Tickets: ${tickets.join(", ")}`);
               }
             }
-
-            async function runValidation() {
-              const event = context.eventName;
-
-              if (event === "pull_request") {
-                const title = context.payload.pull_request.title;
-
-                const tickets = validateText(title);
-                await autoFormatPR(title, tickets);
-
-                core.info(`PR valid with tickets: ${tickets.join(", ")}`);
-              } 
-              else {
-                // squash merge / push validation
-                const commits = await github.rest.repos.listCommits({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: context.payload.after
-                });
-
-                for (const c of commits.data) {
-                  const msg = c.commit.message;
-                  const tickets = validateText(msg);
-                  core.info(`Commit valid: ${tickets.join(", ")}`);
-                }
-              }
-            }
-
-            runValidation().catch(err => {
-              core.setFailed(err.message);
-            });
