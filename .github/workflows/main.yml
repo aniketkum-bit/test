@@ -1,0 +1,20 @@
+name: Validate PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-title:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR title contains Jira ID
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          echo "PR Title: $TITLE"
+
+          if [[ ! "$TITLE" =~ [Bb][Ff][Rr][Nn][[[:space:]]*-[[:space:]]*[0-9]+ ]]; then
+            echo "PR title must contain Jira ticket like BFRN-1234"
+            exit 1
+          fi
