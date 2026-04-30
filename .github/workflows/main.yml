@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - main
+permissions:
+  contents: write
+  pull-requests: write
 
 env:
   AUTO_FORMAT: "true"   # set to "false" if you only want validation
