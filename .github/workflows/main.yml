@@ -1,11 +1,12 @@
-name: Validate PR Title
+name: PR Title Validation
 
 on:
   pull_request:
-    types: [opened, edited, synchronize]
+    types: [opened, edited, synchronize, reopened]
 
 jobs:
-  check-title:
+  pr-title-check:
+    name: pr-title-check
     runs-on: ubuntu-latest
 
     steps:
@@ -14,7 +15,10 @@ jobs:
           TITLE="${{ github.event.pull_request.title }}"
           echo "PR Title: $TITLE"
 
-          if [[ ! "$TITLE" =~ [Bb][Ff][Rr][Nn][[:space:]]*-[[:space:]]*[0-9]+ ]]; then
-            echo "PR title must contain Jira ticket like BFRN-1234"
+          # Example: BFRN-1234 (case insensitive)
+          if [[ ! "$TITLE" =~ [Bb][Ff][Rr][Nn]-[0-9]+ ]]; then
+            echo "❌ PR title must contain Jira ticket like BFRN-1234"
             exit 1
           fi
+
+          echo "✅ PR title is valid"
